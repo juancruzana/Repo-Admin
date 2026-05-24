@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useProductos } from '../hooks/useProductos';
 import { useCategorias } from '../hooks/useCategorias';
+import { useAuthStore } from '../stores/useAuthStore';
 import { ProductoModal } from '../components/productos/ProductoModal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Toast } from '../components/ui/Toast';
@@ -14,15 +16,28 @@ export const ProductosPage = () => {
   const [selectedCategoriaId, setSelectedCategoriaId] = useState<number | undefined>();
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+  const [pendingToggle, setPendingToggle] = useState<Record<number, boolean>>({});
+  const [stockEditing, setStockEditing] = useState<Record<number, string>>({});
+  const [savingStock, setSavingStock] = useState<Record<number, boolean>>({});
 
-  const { list: productosList, create, update, remove } = useProductos(selectedCategoriaId);
+  const hasAnyRole = useAuthStore((s) => s.hasAnyRole);
+  const puedeCrear = hasAnyRole(['ADMIN']);
+  const puedeEditar = hasAnyRole(['ADMIN']);
+  const puedeBorrar = hasAnyRole(['ADMIN']);
+  const puedeCambiarDisponibilidad = hasAnyRole(['ADMIN', 'STOCK']);
+  const puedeEditarStock = hasAnyRole(['ADMIN', 'STOCK']);
+
+  const { list: productosList, create, update, toggleDisponibilidad, actualizarStock, remove } = useProductos(selectedCategoriaId);
   const { list: categoriasList } = useCategorias();
   const { data: productos, isLoading, error } = productosList;
   const { data: categorias } = categoriasList;
 
   const selectedProducto = productos?.find((p) => p.id === selectedProductoId);
 
-  const handleCreate = async (formData: ProductoCreate | ProductoUpdate) => {
+  const getDisponible = (id: number, serverValue: boolean) =>
+    pendingToggle[id] !== undefined ? pendingToggle[id] : serverValue;
+
+  const handleSubmit = async (formData: ProductoCreate | ProductoUpdate) => {
     if (selectedProductoId) {
       await update.mutateAsync({ id: selectedProductoId, data: formData as ProductoUpdate });
     } else {
@@ -41,7 +56,40 @@ export const ProductosPage = () => {
     }
   };
 
-  const handleOpenModal = (id?: number) => { setSelectedProductoId(id || null); setIsModalOpen(true); };
+  const handleToggleDisponibilidad = async (id: number, nuevoValor: boolean) => {
+    flushSync(() => setPendingToggle((prev) => ({ ...prev, [id]: nuevoValor })));
+    try {
+      await toggleDisponibilidad.mutateAsync({ id, data: { disponible: nuevoValor } });
+      setPendingToggle((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    } catch (err) {
+      setPendingToggle((prev) => { const n = { ...prev }; delete n[id]; return n; });
+      setToast({ message: err instanceof Error ? err.message : 'Error al cambiar disponibilidad', type: 'error' });
+    }
+  };
+
+  const handleStockEdit = (id: number, currentValue: number) => {
+    setStockEditing((prev) => ({ ...prev, [id]: String(currentValue) }));
+  };
+
+  const handleStockCancel = (id: number) => {
+    setStockEditing((prev) => { const n = { ...prev }; delete n[id]; return n; });
+  };
+
+  const handleStockSave = async (id: number) => {
+    const value = parseFloat(stockEditing[id]);
+    if (isNaN(value) || value < 0) return;
+    setSavingStock((prev) => ({ ...prev, [id]: true }));
+    try {
+      await actualizarStock.mutateAsync({ id, stock_cantidad: value });
+      setStockEditing((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : 'Error al actualizar stock', type: 'error' });
+    } finally {
+      setSavingStock((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    }
+  };
+
+  const handleOpenModal = (id?: number) => { setSelectedProductoId(id ?? null); setIsModalOpen(true); };
   const handleCloseModal = () => { setIsModalOpen(false); setSelectedProductoId(null); };
 
   if (error) {
@@ -56,7 +104,6 @@ export const ProductosPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Productos</h1>
@@ -64,16 +111,18 @@ export const ProductosPage = () => {
             {productos ? `${productos.length} producto${productos.length !== 1 ? 's' : ''}` : 'Cargando...'}
           </p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium shadow-sm text-sm"
-        >
-          <span className="text-lg leading-none">+</span>
-          Nuevo Producto
-        </button>
+        {puedeCrear && (
+          <button
+            onClick={() => handleOpenModal()}
+            className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm text-sm"
+          >
+            <span className="text-lg leading-none">+</span>
+            Nuevo Producto
+          </button>
+        )}
       </div>
 
-      {/* Filtro de categorías */}
+      {/* Filtro por categoría */}
       {categorias && categorias.length > 0 && (
         <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
           <button
@@ -115,91 +164,142 @@ export const ProductosPage = () => {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Nombre</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Precio</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Categorías</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoría</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ingredientes</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Disponible</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {productos.map((producto) => (
-                  <tr key={producto.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-4 py-3 text-gray-400 text-xs font-mono">#{producto.id}</td>
-                    <td className="px-4 py-3 font-semibold text-gray-900">{producto.nombre}</td>
-                    <td className="px-4 py-3 font-semibold text-gray-900">
-                      ${Number(producto.precio).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                        producto.disponible
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : 'bg-gray-50 text-gray-500 border-gray-200'
-                      }`}>
-                        {producto.disponible ? '● Disponible' : '○ No disponible'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {producto.categorias.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {producto.categorias.map((c) => (
-                            <span key={c.id} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-md font-medium">
-                              {c.nombre}
-                            </span>
-                          ))}
+                {productos.map((producto) => {
+                  const disponible = getDisponible(producto.id, producto.disponible);
+                  const toggling = pendingToggle[producto.id] !== undefined;
+                  const editingStock = stockEditing[producto.id] !== undefined;
+                  return (
+                    <tr key={producto.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="px-4 py-3 text-gray-400 text-xs font-mono">#{producto.id}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">{producto.nombre}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">
+                        ${parseFloat(producto.precio).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-md font-medium">
+                          {producto.categoria?.nombre ?? '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-50 text-purple-700 text-xs font-bold">
+                          {producto.ingredientes.length}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {puedeEditarStock && editingStock ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={stockEditing[producto.id]}
+                              onChange={(e) => setStockEditing((prev) => ({ ...prev, [producto.id]: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleStockSave(producto.id);
+                                if (e.key === 'Escape') handleStockCancel(producto.id);
+                              }}
+                              min="0"
+                              step="1"
+                              disabled={savingStock[producto.id]}
+                              autoFocus
+                              className="w-20 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={() => handleStockSave(producto.id)}
+                              disabled={savingStock[producto.id]}
+                              className="text-green-600 hover:text-green-800 disabled:opacity-40 text-base leading-none"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={() => handleStockCancel(producto.id)}
+                              className="text-gray-400 hover:text-gray-600 text-base leading-none"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <span
+                            onClick={puedeEditarStock ? () => handleStockEdit(producto.id, producto.stock_cantidad) : undefined}
+                            className={`font-medium tabular-nums ${puedeEditarStock ? 'cursor-pointer hover:text-blue-600 underline decoration-dotted' : 'text-gray-700'}`}
+                            title={puedeEditarStock ? 'Click para editar stock' : undefined}
+                          >
+                            {producto.stock_cantidad}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {puedeCambiarDisponibilidad ? (
+                          <button
+                            onClick={() => !toggling && handleToggleDisponibilidad(producto.id, !disponible)}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                              toggling ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+                            } ${disponible ? 'bg-green-500' : 'bg-gray-300'}`}
+                          >
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                              disponible ? 'translate-x-5' : 'translate-x-1'
+                            }`} />
+                          </button>
+                        ) : (
+                          <span className={`text-xs font-medium ${disponible ? 'text-green-600' : 'text-gray-400'}`}>
+                            {disponible ? 'Sí' : 'No'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => navigate(`/productos/${producto.id}`)}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                          >
+                            Ver
+                          </button>
+                          {puedeEditar && (
+                            <button
+                              onClick={() => handleOpenModal(producto.id)}
+                              className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            >
+                              Editar
+                            </button>
+                          )}
+                          {puedeBorrar && (
+                            <button
+                              onClick={() => setConfirmId(producto.id)}
+                              className="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            >
+                              Eliminar
+                            </button>
+                          )}
                         </div>
-                      ) : <span className="text-gray-300 italic text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-50 text-purple-700 text-xs font-bold">
-                        {producto.ingredientes.length}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => navigate(`/productos/${producto.id}`)}
-                          className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-                        >
-                          Ver
-                        </button>
-                        <button
-                          onClick={() => handleOpenModal(producto.id)}
-                          className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => setConfirmId(producto.id)}
-                          className="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
           <p className="text-gray-500 font-medium">No hay productos todavía</p>
           <p className="text-gray-400 text-sm mt-1">
             {selectedCategoriaId ? 'No hay productos en esta categoría.' : 'Creá tu primer producto para empezar.'}
           </p>
-          <button onClick={() => handleOpenModal()} className="mt-4 text-sm text-blue-600 hover:underline font-medium">
-            + Nuevo Producto
-          </button>
+          {puedeCrear && (
+            <button onClick={() => handleOpenModal()} className="mt-4 text-sm text-blue-600 hover:underline font-medium">
+              + Nuevo Producto
+            </button>
+          )}
         </div>
       )}
 
-      {isModalOpen && <ProductoModal onClose={handleCloseModal} onSubmit={handleCreate} initialData={selectedProducto} />}
+      {isModalOpen && <ProductoModal onClose={handleCloseModal} onSubmit={handleSubmit} initialData={selectedProducto} />}
       {confirmId && <ConfirmDialog message="¿Estás seguro de que deseas eliminar este producto?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirmId(null)} isPending={remove.isPending} />}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>

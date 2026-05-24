@@ -36,11 +36,10 @@ export const ProductoDetallePage = () => {
     );
   }
 
-  const precio = typeof producto.precio === 'string' ? parseFloat(producto.precio) : producto.precio;
+  const precio = parseFloat(producto.precio);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Breadcrumb */}
       <button
         onClick={() => navigate('/productos')}
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-blue-600 transition-colors mb-6 group"
@@ -51,7 +50,6 @@ export const ProductoDetallePage = () => {
         Volver a Productos
       </button>
 
-      {/* Hero card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
@@ -73,15 +71,18 @@ export const ProductoDetallePage = () => {
           </span>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mt-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
           <div className="text-center p-4 bg-blue-50 rounded-xl">
             <p className="text-xs font-semibold text-blue-500 uppercase tracking-wider mb-1">Precio</p>
             <p className="text-2xl font-bold text-blue-700">${precio.toFixed(2)}</p>
           </div>
+          <div className="text-center p-4 bg-orange-50 rounded-xl">
+            <p className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-1">Stock</p>
+            <p className="text-2xl font-bold text-orange-700">{producto.stock_cantidad}</p>
+          </div>
           <div className="text-center p-4 bg-purple-50 rounded-xl">
-            <p className="text-xs font-semibold text-purple-500 uppercase tracking-wider mb-1">Categorías</p>
-            <p className="text-2xl font-bold text-purple-700">{producto.categorias.length}</p>
+            <p className="text-xs font-semibold text-purple-500 uppercase tracking-wider mb-1">Categoría</p>
+            <p className="text-lg font-bold text-purple-700 truncate">{producto.categoria?.nombre ?? '—'}</p>
           </div>
           <div className="text-center p-4 bg-emerald-50 rounded-xl">
             <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-1">Ingredientes</p>
@@ -90,54 +91,32 @@ export const ProductoDetallePage = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Categorías */}
-        {producto.categorias.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />
-              Categorías
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {producto.categorias.map((cat) => (
-                <span key={cat.id} className="px-3 py-1.5 bg-purple-50 text-purple-700 text-sm rounded-lg font-medium border border-purple-100">
-                  {cat.nombre}
-                </span>
+      {producto.ingredientes.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+            Ingredientes
+          </h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Ingrediente</th>
+                <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Cantidad</th>
+                <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Unidad</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {producto.ingredientes.map((ing) => (
+                <tr key={ing.ingrediente_id}>
+                  <td className="py-2.5 font-medium text-gray-800">{ing.nombre}</td>
+                  <td className="py-2.5 text-right text-gray-600">{ing.cantidad}</td>
+                  <td className="py-2.5 text-right text-gray-400">{ing.unidad_medida}</td>
+                </tr>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Ingredientes */}
-        {producto.ingredientes.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-              Ingredientes
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Ingrediente</th>
-                    <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Cantidad</th>
-                    <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2">Unidad</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {producto.ingredientes.map((ing) => (
-                    <tr key={ing.ingrediente_id}>
-                      <td className="py-2.5 font-medium text-gray-800">{ing.nombre}</td>
-                      <td className="py-2.5 text-right text-gray-600">{ing.cantidad}</td>
-                      <td className="py-2.5 text-right text-gray-400">{ing.unidad_medida}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
