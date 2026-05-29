@@ -44,7 +44,7 @@ export const useProductos = (categoriaId?: number, id?: number) => {
   const toggleDisponibilidad = useMutation({
     mutationFn: ({ id, data }: { id: number; data: ProductoDisponibilidadUpdate }) =>
       toggleDisponibilidadProducto(id, data),
-    onSuccess: (productoActualizado, variables) => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.productos.list(categoriaId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.productos.detail(variables.id) });
     },
