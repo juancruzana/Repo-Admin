@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { Layout } from '../components/layout/Layout';
 import { LoginPage } from '../modules/auth/pages/LoginPage';
-import { ForbiddenPage } from '../pages/ForbiddenPage';
+import { ForbiddenPage } from '../modules/auth/pages/ForbiddenPage';
 import { DashboardPage } from '../modules/dashboard/pages/DashboardPage';
 import { CategoriasPage } from '../modules/categorias/pages/CategoriasPage';
 import { IngredientesPage } from '../modules/ingredientes/pages/IngredientesPage';
