@@ -16,6 +16,9 @@ export const queryKeys = {
     detail: (id: number) => ['pedidos', 'detail', id] as const,
     historial: (id: number) => ['pedidos', 'historial', id] as const,
   },
+  pagos: {
+    pedido: (pedidoId: number) => ['pagos', 'pedido', pedidoId] as const,
+  },
   usuarios: {
     list: (filtros: object) => ['usuarios', 'list', filtros] as const,
     detail: (id: number) => ['usuarios', 'detail', id] as const,

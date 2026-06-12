@@ -1,11 +1,27 @@
+import { useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useProductos } from '../hooks/useProductos';
+import { useAuthStore } from '../../auth/stores/useAuthStore';
 
 export const ProductoDetallePage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { detail } = useProductos(undefined, id ? parseInt(id) : undefined);
+  const { detail, subirImagen } = useProductos(undefined, id ? parseInt(id) : undefined);
   const { data: producto, isLoading, error } = detail;
+  const esAdmin = useAuthStore((s) => s.hasAnyRole)(['ADMIN']);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState('');
+
+  const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite re-seleccionar el mismo archivo
+    if (!file || !producto) return;
+    setUploadError('');
+    subirImagen.mutate(
+      { id: producto.id, file },
+      { onError: (err) => setUploadError(err instanceof Error ? err.message : 'Error al subir') }
+    );
+  };
 
   if (error) {
     return (
@@ -51,6 +67,43 @@ export const ProductoDetallePage = () => {
       </button>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 mb-6">
+        <div className="flex flex-col sm:flex-row gap-6 mb-2">
+          <div className="flex-shrink-0">
+            {producto.imagen_url ? (
+              <img
+                src={producto.imagen_url}
+                alt={producto.nombre}
+                className="w-32 h-32 object-cover rounded-xl border border-gray-200"
+              />
+            ) : (
+              <div className="w-32 h-32 flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 text-xs text-gray-400 text-center px-2">
+                Sin imagen
+              </div>
+            )}
+            {esAdmin && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={onFileSelected}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={subirImagen.isPending}
+                  className="mt-2 w-32 text-xs bg-blue-600 text-white px-2 py-1.5 rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                >
+                  {subirImagen.isPending ? 'Subiendo...' : 'Subir imagen'}
+                </button>
+                {uploadError && (
+                  <p className="mt-1 w-32 text-xs text-red-600">{uploadError}</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{producto.nombre}</h1>

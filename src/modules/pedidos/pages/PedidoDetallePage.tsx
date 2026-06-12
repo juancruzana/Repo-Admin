@@ -1,24 +1,33 @@
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { usePedido, useAvanzarEstado, useCancelarPedido } from '../hooks/usePedidos';
+import { useQueryClient } from '@tanstack/react-query';
+import { usePedido, usePagoPedido, useAvanzarEstado, useCancelarPedido } from '../hooks/usePedidos';
 import { useAuthStore } from '../../auth/stores/useAuthStore';
+import { useWSStore } from '../../ws/useWSStore';
 import type { EstadoCodigo } from '../types';
 
 const ESTADO_STYLES: Record<EstadoCodigo, string> = {
   PENDIENTE:  'bg-yellow-50 text-yellow-700 border-yellow-200',
   CONFIRMADO: 'bg-blue-50 text-blue-700 border-blue-200',
   EN_PREP:    'bg-orange-50 text-orange-700 border-orange-200',
-  EN_CAMINO:  'bg-purple-50 text-purple-700 border-purple-200',
   ENTREGADO:  'bg-green-50 text-green-700 border-green-200',
   CANCELADO:  'bg-gray-100 text-gray-500 border-gray-200',
 };
 
+// FSM v7 (5 estados): EN_PREP pasa directo a ENTREGADO
 const ACCIONES: Partial<Record<EstadoCodigo, { label: string; cancel?: boolean }[]>> = {
   PENDIENTE:  [{ label: 'Confirmar' }, { label: 'Cancelar', cancel: true }],
   CONFIRMADO: [{ label: 'Marcar en preparación' }, { label: 'Cancelar', cancel: true }],
-  EN_PREP:    [{ label: 'Marcar en camino' }],
-  EN_CAMINO:  [{ label: 'Marcar entregado' }],
+  EN_PREP:    [{ label: 'Marcar entregado' }, { label: 'Cancelar', cancel: true }],
   ENTREGADO:  [],
   CANCELADO:  [],
+};
+
+const PAGO_ESTADO_LABELS: Record<string, { label: string; style: string }> = {
+  approved: { label: 'Aprobado',  style: 'bg-green-50 text-green-700 border-green-200' },
+  pending:  { label: 'Pendiente', style: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  rejected: { label: 'Rechazado', style: 'bg-red-50 text-red-700 border-red-200' },
+  cancelled:{ label: 'Cancelado', style: 'bg-gray-100 text-gray-500 border-gray-200' },
 };
 
 export const PedidoDetallePage = () => {
@@ -30,8 +39,31 @@ export const PedidoDetallePage = () => {
   const puedeCambiarEstado = hasAnyRole(['ADMIN', 'PEDIDOS']);
 
   const { data: pedido, isLoading, error } = usePedido(pedidoId);
+  const esMercadoPago = pedido?.forma_pago.codigo === 'MERCADOPAGO';
+  const { data: pago } = usePagoPedido(pedidoId, esMercadoPago);
   const avanzar = useAvanzarEstado();
   const cancelar = useCancelarPedido();
+  const queryClient = useQueryClient();
+  const connect = useWSStore((s) => s.connect);
+  const disconnect = useWSStore((s) => s.disconnect);
+
+  // tiempo real: refrescar el detalle si este pedido cambia de estado
+  useEffect(() => {
+    connect((evento) => {
+      if (evento.event === 'PEDIDO_ACTUALIZADO' && evento.data?.pedido_id === pedidoId) {
+        queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+        queryClient.invalidateQueries({ queryKey: ['pagos'] });
+      }
+    });
+    return () => disconnect();
+  }, [connect, disconnect, queryClient, pedidoId]);
+
+  const onCancelar = () => {
+    // RN-05: el motivo de cancelación es obligatorio
+    const motivo = window.prompt('Motivo de la cancelación (obligatorio):');
+    if (!motivo?.trim()) return;
+    cancelar.mutate({ id: pedidoId, motivo: motivo.trim() });
+  };
 
   const isPending = avanzar.isPending || cancelar.isPending;
 
@@ -101,6 +133,36 @@ export const PedidoDetallePage = () => {
           </div>
         </div>
 
+        {esMercadoPago && (
+          <div className="mt-6 pt-5 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Pago MercadoPago
+            </p>
+            {pago ? (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                  (PAGO_ESTADO_LABELS[pago.mp_status] ?? PAGO_ESTADO_LABELS.pending).style
+                }`}>
+                  {(PAGO_ESTADO_LABELS[pago.mp_status] ?? { label: pago.mp_status }).label}
+                </span>
+                <span className="text-sm text-gray-600">
+                  ${parseFloat(pago.transaction_amount).toFixed(2)} {pago.currency_id}
+                </span>
+                {pago.mp_payment_id && (
+                  <span className="text-xs font-mono text-gray-400">
+                    payment_id: {pago.mp_payment_id}
+                  </span>
+                )}
+                {pago.mp_status_detail && (
+                  <span className="text-xs text-gray-400">{pago.mp_status_detail}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">El pedido todavía no registra un pago.</p>
+            )}
+          </div>
+        )}
+
         {puedeCambiarEstado && acciones.length > 0 && (
           <div className="mt-6 pt-5 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Cambiar estado</p>
@@ -108,7 +170,7 @@ export const PedidoDetallePage = () => {
               {acciones.map((accion) => (
                 <button
                   key={accion.label}
-                  onClick={() => accion.cancel ? cancelar.mutate(pedidoId) : avanzar.mutate(pedidoId)}
+                  onClick={() => accion.cancel ? onCancelar() : avanzar.mutate(pedidoId)}
                   disabled={isPending}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
                     accion.cancel

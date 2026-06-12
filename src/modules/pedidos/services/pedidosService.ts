@@ -23,7 +23,12 @@ export async function avanzarEstadoPedido(id: number): Promise<Pedido> {
   return data;
 }
 
-export async function cancelarPedido(id: number): Promise<Pedido> {
-  const { data } = await apiClient.post<Pedido>(`/v1/pedidos/${id}/cancelar`);
+export async function cancelarPedido(id: number, motivo: string): Promise<Pedido> {
+  // el staff cancela por la FSM (PATCH /estado); RN-05: motivo obligatorio
+  // (POST /cancelar es solo para que el cliente cancele su propio pedido)
+  const { data } = await apiClient.patch<Pedido>(`/v1/pedidos/${id}/estado`, {
+    estado_codigo: 'CANCELADO',
+    observacion: motivo,
+  });
   return data;
 }

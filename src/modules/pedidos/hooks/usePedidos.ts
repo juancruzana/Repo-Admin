@@ -6,6 +6,7 @@ import {
   avanzarEstadoPedido,
   cancelarPedido,
 } from '../services/pedidosService';
+import { getPagoDePedido } from '../services/pagosService';
 
 interface PedidoFiltros {
   estado_codigo?: string;
@@ -14,10 +15,11 @@ interface PedidoFiltros {
   size?: number;
 }
 
-export const usePedidos = (filtros: PedidoFiltros = {}) => {
+export const usePedidos = (filtros: PedidoFiltros = {}, enabled = true) => {
   return useQuery({
     queryKey: queryKeys.pedidos.list(filtros),
     queryFn: () => getPedidos(filtros),
+    enabled,
   });
 };
 
@@ -26,6 +28,15 @@ export const usePedido = (id: number) => {
     queryKey: queryKeys.pedidos.detail(id),
     queryFn: () => getPedido(id),
     enabled: !!id,
+  });
+};
+
+export const usePagoPedido = (pedidoId: number, enabled: boolean) => {
+  return useQuery({
+    queryKey: queryKeys.pagos.pedido(pedidoId),
+    queryFn: () => getPagoDePedido(pedidoId),
+    enabled: enabled && !!pedidoId,
+    retry: false, // 404 = el pedido todavía no tiene pago, no reintentar
   });
 };
 
@@ -44,8 +55,9 @@ export const useAvanzarEstado = () => {
 export const useCancelarPedido = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => cancelarPedido(id),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, motivo }: { id: number; motivo: string }) =>
+      cancelarPedido(id, motivo),
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.pedidos.list({}) });
       qc.invalidateQueries({ queryKey: queryKeys.pedidos.detail(id) });
       qc.invalidateQueries({ queryKey: queryKeys.pedidos.historial(id) });

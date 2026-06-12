@@ -9,6 +9,7 @@ import {
   actualizarStockProducto,
   deleteProducto,
 } from '../services/productosService';
+import { uploadImagenProducto } from '../services/imageUploadService';
 import type { ProductoCreate, ProductoUpdate, ProductoDisponibilidadUpdate } from '../types';
 
 export const useProductos = (categoriaId?: number, id?: number) => {
@@ -66,5 +67,14 @@ export const useProductos = (categoriaId?: number, id?: number) => {
     },
   });
 
-  return { list, detail, create, update, toggleDisponibilidad, actualizarStock, remove };
+  const subirImagen = useMutation({
+    mutationFn: ({ id, file }: { id: number; file: File }) =>
+      uploadImagenProducto(id, file),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.productos.list(categoriaId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.productos.detail(variables.id) });
+    },
+  });
+
+  return { list, detail, create, update, toggleDisponibilidad, actualizarStock, remove, subirImagen };
 };

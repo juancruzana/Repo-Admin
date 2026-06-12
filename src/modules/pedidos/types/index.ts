@@ -1,8 +1,8 @@
+// FSM v7: 5 estados, sin EN_CAMINO (D-01)
 export type EstadoCodigo =
   | 'PENDIENTE'
   | 'CONFIRMADO'
   | 'EN_PREP'
-  | 'EN_CAMINO'
   | 'ENTREGADO'
   | 'CANCELADO';
 
@@ -58,4 +58,18 @@ export interface Pedido {
   fecha_entrega: string | null;
   items: DetallePedido[];
   historial: HistorialEstado[];
+}
+
+// pago MercadoPago del pedido (read-only, GET /v1/pagos/pedido/{id})
+export interface Pago {
+  id: number;
+  pedido_id: number;
+  mp_payment_id: string | null;
+  mp_preference_id: string | null;
+  mp_status: string; // pending | approved | rejected | ...
+  mp_status_detail: string | null;
+  transaction_amount: string;
+  currency_id: string;
+  created_at: string;
+  updated_at: string;
 }

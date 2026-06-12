@@ -1,5 +1,8 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePedidos } from '../hooks/usePedidos';
+import { useWSStore } from '../../ws/useWSStore';
 import type { EstadoCodigo, Pedido } from '../types';
 
 const COLUMNAS: {
@@ -13,7 +16,6 @@ const COLUMNAS: {
   { codigo: 'PENDIENTE',  label: 'Pendiente',      headerBg: 'bg-yellow-50',  headerText: 'text-yellow-700', borderColor: 'border-yellow-200', dotColor: 'bg-yellow-400' },
   { codigo: 'CONFIRMADO', label: 'Confirmado',     headerBg: 'bg-blue-50',    headerText: 'text-blue-700',   borderColor: 'border-blue-200',   dotColor: 'bg-blue-500' },
   { codigo: 'EN_PREP',    label: 'En preparación', headerBg: 'bg-orange-50',  headerText: 'text-orange-700', borderColor: 'border-orange-200', dotColor: 'bg-orange-400' },
-  { codigo: 'EN_CAMINO',  label: 'En camino',      headerBg: 'bg-purple-50',  headerText: 'text-purple-700', borderColor: 'border-purple-200', dotColor: 'bg-purple-500' },
   { codigo: 'ENTREGADO',  label: 'Entregado',      headerBg: 'bg-green-50',   headerText: 'text-green-700',  borderColor: 'border-green-200',  dotColor: 'bg-green-500' },
   { codigo: 'CANCELADO',  label: 'Cancelado',      headerBg: 'bg-gray-100',   headerText: 'text-gray-500',   borderColor: 'border-gray-200',   dotColor: 'bg-gray-400' },
 ];
@@ -44,7 +46,20 @@ const PedidoCard = ({ pedido, onClick }: { pedido: Pedido; onClick: () => void }
 
 export const PedidosPage = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: pedidos, isLoading, error } = usePedidos();
+  const connect = useWSStore((s) => s.connect);
+  const disconnect = useWSStore((s) => s.disconnect);
+
+  // tiempo real: al recibir PEDIDO_ACTUALIZADO se refresca el kanban
+  useEffect(() => {
+    connect((evento) => {
+      if (evento.event === 'PEDIDO_ACTUALIZADO') {
+        queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+      }
+    });
+    return () => disconnect();
+  }, [connect, disconnect, queryClient]);
 
   if (error) {
     return (
